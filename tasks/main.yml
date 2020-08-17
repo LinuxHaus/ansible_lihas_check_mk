@@ -1,0 +1,16 @@
+---
+- name: install software
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - check-mk-agent
+  loop_control:
+    loop_var: item
+
+- name: enable check-mk-agent via systemd
+  service:
+    name: check_mk.socket
+    enabled: true
+    state: started
+    
