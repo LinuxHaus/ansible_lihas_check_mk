@@ -3,5 +3,5 @@ galaxy_info:
   author: lihas@lihas.de
 dependencies:
   - name: lihas-common
-    src: https://github.com/LinuxHaus/ansible-lihas-variables.git
+    src: https://github.com/LinuxHaus/ansible-lihas-common.git
 
