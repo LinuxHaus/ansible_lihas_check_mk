@@ -1,0 +1,7 @@
+---
+- hosts: '*'
+  roles:
+    - lihas_variables
+    - lihas_common
+    - lihas_check_mk
+...
