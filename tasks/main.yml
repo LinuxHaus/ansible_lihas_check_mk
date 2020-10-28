@@ -1,4 +1,8 @@
 ---
+- name: include lihas_common
+  include_role:
+    name: lihas_common
+  when: role_done_lihas_common is not defined
 - name: install software
   apt:
     name: "{{ item }}"
@@ -13,4 +17,3 @@
     name: check_mk.socket
     enabled: true
     state: started
-    
