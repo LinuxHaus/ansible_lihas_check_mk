@@ -1,6 +1,8 @@
 # ansible_lihas_check_mk
 Install check-mk from LiHAS Repositories, startup via systemd
 
+Disables xinetd check_mk if running systemd
+
 ## Requirements
 
 To run solo:

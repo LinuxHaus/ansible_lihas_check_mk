@@ -3,6 +3,43 @@
   include_role:
     name: lihas_common
   when: role_done_lihas_common is not defined
+
+# remove old check_mk.socket
+- name: "stat old check_mk.socket"
+  stat: path=/etc/systemd/system/check_mk.socket
+  register: oldfile
+- name: reinstall buster check-mk-agent
+  apt:
+    name: "{{ item }}"
+    state: absent
+    purge: yes
+  loop:
+    - check-mk-agent
+  loop_control:
+    loop_var: item
+  when: not oldfile.stat.exists and ansible_distribution_release == "buster"
+- name: "stop old check_mk.socket"
+  service:
+    name: check_mk.socket
+    enabled: false
+    state: stopped
+  when: oldfile.stat.exists and ansible_distribution_release == "bullseye"
+- name: "remove check_mk leftovers"
+  file:
+    path: "/etc/systemd/system/check_mk.socket"
+    state: absent
+  when: ansible_distribution_release == "bullseye"
+- name: "remove check_mk leftovers"
+  file:
+    path: "/etc/systemd/system/check_mk@.service"
+    state: absent
+  when: ansible_distribution_release == "bullseye"
+- name: "monitoring servers: reload_systemd 1"
+  systemd:
+    daemon_reload: yes
+  when: ansible_distribution_release == "bullseye"
+
+
 - name: install software
   apt:
     name: "{{ item }}"
@@ -12,8 +49,108 @@
   loop_control:
     loop_var: item
 
+- name: debug 1
+  debug:
+    var: configspaces
+    verbosity: 1
+- name: debug 1
+  debug:
+    var: hostvars[inventory_hostname][item]['config']['monitoring_hosts']
+    verbosity: 1
+  loop: "{{ configspaces }}"
+- name: "collect monitoring servers"
+  set_fact:
+    lihas_mon_hosts: "{{ lihas_mon_hosts | default([]) + hostvars[inventory_hostname][item]['config']['monitoring_hosts'] }}"
+    cacheable: no
+  loop: "{{ configspaces }}"
+  when: hostvars[inventory_hostname][item]['config']['monitoring_hosts'] is defined
+- name: "/etc/systemd/system/check-mk-agent.socket.d"
+  file:
+    path: "/etc/systemd/system/check-mk-agent.socket.d"
+    mode: 0755
+    state: directory
+  when: lihas_mon_hosts is defined
+- name: "/etc/systemd/system/check-mk-agent.socket.d/allowip.conf"
+  template:
+    src: "etc/systemd/system/check-mk-agent.socket.d/allowip.conf"
+    dest: "/etc/systemd/system/check-mk-agent.socket.d/allowip.conf"
+    mode: 0644
+  when: lihas_mon_hosts is defined
+  register: systemd
+- name: "monitoring servers: reload_systemd"
+  systemd:
+    daemon_reload: yes
+  when: lihas_mon_hosts is defined and systemd.changed and ansible_service_mgr == "systemd"
+
+- name: "check if /lib/systemd/system/check-mk-agent.socket exists"
+  stat: path=/lib/systemd/system/check-mk-agent.socket
+  register: checkmkservice
+
+- name: "check if /etc/xinetd.d/check_mk exists"
+  stat: path=/etc/xinetd.d/check_mk
+  register: xinetdcheck_mk
+- name: "check if /etc/xinetd.d/check-mk-agent exists"
+  stat: path=/etc/xinetd.d/check-mk-agent
+  register: xinetdcheck_mk_agent
+- name: "disable xinetd check_mk, remove error line "
+  lineinfile:
+    path: /etc/xinetd.d/check_mk
+    line: '        disable      = yes'
+    state: absent
+  when: ansible_service_mgr == "systemd" and xinetdcheck_mk.stat.exists
+- name: "disable xinetd check_mk, remove error line "
+  lineinfile:
+    path: /etc/xinetd.d/check-mk-agent
+    line: '        disable      = yes'
+    state: absent
+  when: ansible_service_mgr == "systemd" and xinetdcheck_mk_agent.stat.exists
+- name: "disable xinetd check_mk if running systemd, check-mk-agent"
+  lineinfile:
+    path: /etc/xinetd.d/check-mk-agent
+    regexp: 'disable.*no'
+    line: '        disable       = yes'
+    insertbefore: '}'
+    create: false
+  register: result
+  when: ansible_service_mgr == "systemd" and xinetdcheck_mk_agent.stat.exists
+- name: "disable xinetd check_mk if running systemd check_mk"
+  lineinfile:
+    path: /etc/xinetd.d/check_mk
+    regexp: 'disable.*no'
+    line: '        disable       = yes'
+    insertbefore: '}'
+    create: false
+  register: result
+  when: ansible_service_mgr == "systemd" and xinetdcheck_mk.stat.exists
+- name: remove wrong line from xinetd service (check-mk-agent)
+  shell:
+    cmd: "tail -n1 /etc/xinetd.d/check-mk-agent | grep -q 'disable' && sed -i '/^\\}/,${ /disable/d }' /etc/xinetd.d/check-mk-agent || true"
+  changed_when: false
+  when: xinetdcheck_mk_agent.stat.exists
+- name: remove wrong line from xinetd service (check_mk)
+  shell:
+    cmd: "tail -n1 /etc/xinetd.d/check_mk | grep -q 'disable' && sed -i '/^\\}/,${ /disable/d }' /etc/xinetd.d/check_mk || true"
+  changed_when: false
+  when: xinetdcheck_mk.stat.exists
+- name: "reload xinetd if check_mk got disabled"
+  service:
+    name: xinetd
+    state: restarted
+  when: ansible_service_mgr == "systemd" and result.changed
+- name: recheck for xinetd service restart of old installations
+  shell:
+    cmd: "(netstat -nlpt || ss -nlpt) | grep -q xinetd && service xinetd restart || true"
+  when: ansible_service_mgr == "systemd"
+
 - name: enable check-mk-agent via systemd
+  service:
+    name: check-mk-agent.socket
+    enabled: true
+    state: restarted
+  when: ansible_service_mgr == "systemd" and checkmkservice.stat.exists
+- name: enable check_mk via systemd
   service:
     name: check_mk.socket
     enabled: true
-    state: started
+    state: restarted
+  when: ansible_service_mgr == "systemd" and not checkmkservice.stat.exists
