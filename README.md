@@ -15,6 +15,14 @@ ansible-playbook -i localhost, check_mk.yml
 
 * lihas_common
 
+## Variables
+```
+# add/remove check-mk-agent plugins via apt
+X.config.check_mk.agent.plugins.add: []
+X.config.check_mk.agent.plugins.remolve: []
+
+```
+
 ## Example Playbook
 
 ```

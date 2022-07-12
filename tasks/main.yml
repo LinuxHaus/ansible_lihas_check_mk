@@ -140,6 +140,7 @@
 - name: recheck for xinetd service restart of old installations
   shell:
     cmd: "(netstat -nlpt || ss -nlpt) | grep -q xinetd && service xinetd restart || true"
+  changed_when: False
   when: ansible_service_mgr == "systemd"
 
 - name: enable check-mk-agent via systemd
@@ -147,6 +148,7 @@
     name: check-mk-agent.socket
     enabled: true
     state: restarted
+  changed_when: False
   when: ansible_service_mgr == "systemd" and checkmkservice.stat.exists
 - name: enable check_mk via systemd
   service:
@@ -154,3 +156,46 @@
     enabled: true
     state: restarted
   when: ansible_service_mgr == "systemd" and not checkmkservice.stat.exists
+
+- name: 'collect: remove check-mk-agent-plugins (apt)'
+  set_fact:
+    lihas_check_mk_agent_plugins_remove: "{{ lihas_check_mk_agent_plugins_remove | default([]) + hostvars[inventory_hostname][item]['config']['check_mk']['agent']['plugins']['remove'] | default([]) }}"
+  loop: "{{ configspaces }}"
+  when: hostvars[inventory_hostname][item]['config']['check_mk']['agent']['plugins']['remove']  is defined
+- name: 'debug: check-mk-agent-plugins_remove'
+  debug:
+    var: lihas_check_mk_agent_plugins_remove
+    verbosity: 1
+  when: lihas_check_mk_agent_plugins_remove is defined
+- name: 'remove: check-mk-agent-plugins'
+  apt:
+    name: "{{ item }}"
+    state: absent
+    purge: true
+  with_items: "{{ lihas_check_mk_agent_plugins_remove }}"
+  when: lihas_check_mk_agent_plugins_remove is defined
+- name: 'collect: add check-mk-agent-plugins (apt)'
+  set_fact:
+    lihas_check_mk_agent_plugins_add: "{{ lihas_check_mk_agent_plugins_add | default([]) + hostvars[inventory_hostname][item]['config']['check_mk']['agent']['plugins']['add'] | default([]) }}"
+  loop: "{{ configspaces }}"
+  when: hostvars[inventory_hostname][item]['config']['check_mk']['agent']['plugins']['add']  is defined
+- name: 'debug: check-mk-agent-plugins_add'
+  debug:
+    var: lihas_check_mk_agent_plugins_add
+    verbosity: 1
+  when: lihas_check_mk_agent_plugins_add is defined
+- name: 'add: check-mk-agent-plugins'
+  apt:
+    name: "{{ item }}"
+    state: latest
+  with_items: "{{ lihas_check_mk_agent_plugins_add }}"
+  when: lihas_check_mk_agent_plugins_add is defined
+- name: 'remove check-mk cache for old mk_apt'
+  file:
+    path: '/var/lib/check_mk_agent/cache/plugins_86400\mk_apt.cache'
+    state: directory
+    state: absent
+  with_items:
+    - '/var/lib/check_mk_agent/cache/plugins_86400\mk_apt.cache'
+    - '/var/lib/check_mk_agent/cache/plugins_14400\mk_apt.cache'
+...
