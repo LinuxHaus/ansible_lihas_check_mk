@@ -192,7 +192,7 @@
   when: lihas_check_mk_agent_plugins_add is defined
 - name: 'remove check-mk cache for old mk_apt'
   file:
-    path: '/var/lib/check_mk_agent/cache/plugins_86400\mk_apt.cache'
+    path: '{{item}}'
     state: directory
     state: absent
   with_items:
